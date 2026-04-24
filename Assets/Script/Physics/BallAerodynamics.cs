@@ -18,7 +18,7 @@ internal static class BallAerodynamics
             return Vector3.zero;
 
         Vector3 spinVector = spinAxisNorm * angularVelocity;
-        Vector3 magnusDirection = Vector3.Cross(spinVector, velocity);
+        Vector3 magnusDirection = Vector3.Cross(velocity, spinVector);
 
         if (magnusDirection.sqrMagnitude < BallPhysicsConstants.MIN_MAGNUS_DIRECTION_SQUARED)
             return Vector3.zero;

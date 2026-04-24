@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using UnityEditor.ShaderGraph.Internal;
 using UnityEngine;
 
 /// <summary>
@@ -31,33 +32,27 @@ public static class BallTrajectorySimulator
     private const string LAYER_GROUND = "Ground";
     private const string LAYER_HOMERUN_ZONE = "HomerunZone";
     private const string LAYER_UNKNOWN = "Unknown";
-
     /// <summary>
     /// 物理ステップ計算(重力・抗力・マグヌス力)
     /// </summary>
     private static void SimulatePhysicsStep(
-        ref Vector3 position,
-        ref Vector3 velocity,
-        Vector3 spinAxisNormalized,
-        float spinRateRPM,
-        float liftCoefficient,
-        float deltaTime)
+    ref Vector3 position,
+    ref Vector3 velocity,
+    Vector3 spinAxisNormalized,
+    float angularVelocity,  // RPMではなくrad/s
+    float liftCoefficient,
+    float deltaTime,
+    float scale)
     {
-        Vector3 gravity = Physics.gravity;
-        Vector3 dragForce = BallAerodynamics.CalculateDragForce(velocity);
-        Vector3 magnusForce = BallAerodynamics.CalculateMagnusForce(
-            velocity,
-            spinAxisNormalized,
-            spinRateRPM,
-            liftCoefficient
-        );
-
-        Vector3 acceleration = gravity + (dragForce + magnusForce) / BALL_MASS_KG;
-
-        velocity += acceleration * deltaTime;
+        Vector3 drag = BallAerodynamics.CalculateDragForce(velocity);
+        Vector3 magnus = BallAerodynamics.CalculateMagnusForce(
+            velocity, spinAxisNormalized, angularVelocity, liftCoefficient);
+        Vector3 acc = Physics.gravity * scale + (drag + magnus) / BallPhysicsConstants.BALL_MASS;
+        velocity += acc * deltaTime;
         position += velocity * deltaTime;
-    }
 
+
+    }
     /// <summary>
     /// 内部実装:軌道計算の共通ロジック
     /// </summary>
@@ -68,7 +63,8 @@ public static class BallTrajectorySimulator
         float spinRateRPM,
         float liftCoefficient,
         BallPhysicsCalculator.SimulationConfig config,
-        bool trackGroundLayer)
+        bool trackGroundLayer,
+        float scale)
     {
         List<Vector3> trajectory = new List<Vector3> { startPosition };
         Vector3 position = startPosition;
@@ -81,12 +77,13 @@ public static class BallTrajectorySimulator
 
         while (elapsed < config.MaxSimulationTime)
         {
+            Debug.Log($"[Traj] step={trajectory.Count} pos={position} vel={velocity}");
             Vector3 prevPos = position;
             Vector3 newPos = position;
             Vector3 newVel = velocity;
 
             SimulatePhysicsStep(ref newPos, ref newVel, spinAxisNormalized,
-                               spinRateRPM, liftCoefficient, config.DeltaTime);
+                               spinRateRPM, liftCoefficient, config.DeltaTime, scale);
 
             // フェンス反射
             if (!isRolling && config.BounceSettings != null)
@@ -165,12 +162,13 @@ public static class BallTrajectorySimulator
         Vector3 spinAxisNormalized,
         float spinRateRPM,
         float liftCoefficient,
-        BallPhysicsCalculator.SimulationConfig config)
+        BallPhysicsCalculator.SimulationConfig config,
+        float scale)
     {
         var result = SimulateTrajectoryInternal(
             startPosition, initialVelocity, spinAxisNormalized,
             spinRateRPM, liftCoefficient, config,
-            trackGroundLayer: false);
+            trackGroundLayer: false, scale);
 
         return result.Points;
     }
@@ -184,12 +182,13 @@ public static class BallTrajectorySimulator
         Vector3 spinAxisNormalized,
         float spinRateRPM,
         float liftCoefficient,
-        BallPhysicsCalculator.SimulationConfig config)
+        BallPhysicsCalculator.SimulationConfig config,
+        float scale)
     {
         return SimulateTrajectoryInternal(
             startPosition, initialVelocity, spinAxisNormalized,
             spinRateRPM, liftCoefficient, config,
-            trackGroundLayer: true);
+            trackGroundLayer: true, scale);
     }
 
     /// <summary>
