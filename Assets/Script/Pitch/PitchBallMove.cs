@@ -1,41 +1,43 @@
 ﻿using System.Collections.Generic;
-using System.Runtime.CompilerServices;
 using UnityEngine;
 
 public class PitchBallMove : BallMoveTrajectory
 {
-    private PitchPreset _preset;
-
     public List<Vector3> Trajectory => _trajectory;
+
     private MeshRenderer _renderer;
+    private Vector3 _spinAxis;
+    private float _spinRate;
 
-    private void OnAtBatReset()
-    {
-        if (_renderer == null)
-        {
-            var renderer = GetComponent<Renderer>();
-        }
-        else
-        {
-            _renderer.enabled = false;
-        }
-    }
-
-    public void Initialize(List<Vector3> trajectory, PitchPreset preset)
+    public void Setup(
+        List<Vector3> trajectory,
+        float deltaTime,
+        Vector3 spinAxis,
+        float spinRate)
     {
         Debug.Log($"{trajectory.Count}点の軌道でボール移動を初期化します");
+
         _elapsedTime = 0f;
-        _trajectoryProgress = 0f; 
+        _trajectoryProgress = 0f;
         _isMoving = false;
         _trajectory = trajectory;
-        _preset = preset;
+        _trajectoryDeltaTime = deltaTime;
+        _spinAxis = spinAxis;
+        _spinRate = spinRate;
+
         transform.position = trajectory[0];
-        _isMoving = true;
+
         if (_renderer == null)
-        {
             _renderer = GetComponent<MeshRenderer>();
-        }
+
         _renderer.enabled = true;
+
+        StartMoving();
+    }
+
+    public void StartMoving()
+    {
+        _isMoving = true;
     }
 
     protected override void Update()
@@ -43,30 +45,16 @@ public class PitchBallMove : BallMoveTrajectory
         base.Update();
     }
 
-    private void OnBattingInput()
-    {
-        _isMoving = false;
-    }
-
-    private void OnBattingResultEvent(BattingBallResult result)
-    {
-        if (result.BallType == BattingBallType.Miss)
-        {
-            _isMoving = true;
-        }
-    }
-
     protected override void ApplySpin()
     {
-        float deg = _preset.SpinRate * 360f / 60f * _spinSpeedMultiplier;
-        transform.Rotate(_preset.NormalizedSpinAxis, deg * Time.deltaTime);
+        float deg = _spinRate * 360f / 60f * _spinSpeedMultiplier;
+        transform.Rotate(_spinAxis, deg * Time.deltaTime);
     }
 
     protected override void OnReachedEnd()
     {
         Debug.Log("PitchBallMove: ボールがターゲットに到達しました");
         _isMoving = false;
-        
         _trajectory = null;
         _elapsedTime = 0f;
     }

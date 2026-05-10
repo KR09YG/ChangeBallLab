@@ -10,9 +10,10 @@ public static class PitchTrajectoryCalculator
     /// 投球軌道を計算
     /// </summary>
     public static List<Vector3> PitchCalculate(
-        PitchPreset preset,
+        BallData ballData,
         Vector3 releasePoint,
-        Vector3 targetPoint,
+        Vector3 passPoint,
+        float stopZ,
         bool enableDebugLogs = false,
         TrajectoryDebugger debugger = null)
     {
@@ -20,27 +21,26 @@ public static class PitchTrajectoryCalculator
         {
             Debug.Log("========== 軌道計算開始 ==========");
             Debug.Log($"Release: {releasePoint}");
-            Debug.Log($"Target: {targetPoint}");
-            Debug.Log($"球種: {preset.PitchName}");
+            Debug.Log($"PassPoint: {passPoint}");
+            Debug.Log($"StopZ: {stopZ}");
+            Debug.Log($"球種: {ballData.Name}");
         }
 
-        // パラメータ作成
-        var parameters = preset.CreateParameters(releasePoint, targetPoint);
-
-        if (enableDebugLogs)
+        var request = new PitchRequest
         {
-            LogParameters(parameters, preset);
-        }
+            BallData = ballData,
+            ReleasePoint = releasePoint,
+            PassPoint = passPoint,
+            StopZ = stopZ
+        };
 
-        // 軌道計算
-        List<Vector3> trajectory = BallPhysicsCalculator.CalculateTrajectory(parameters);
+        List<Vector3> trajectory = BallPhysicsCalculator.CalculateTrajectory(request);
 
         if (enableDebugLogs)
         {
             LogTrajectoryResults(trajectory);
         }
 
-        // デバッガーに軌道を渡す
         if (debugger != null)
         {
             debugger.SetTrajectory(trajectory);
@@ -67,7 +67,6 @@ public static class PitchTrajectoryCalculator
         Vector3 start = trajectory[0];
         Vector3 end = trajectory[trajectory.Count - 1];
         Vector3 straightLine = end - start;
-
         float maxDeviation = 0f;
 
         for (int i = 1; i < trajectory.Count - 1; i++)
@@ -84,28 +83,15 @@ public static class PitchTrajectoryCalculator
     }
 
     /// <summary>
-    /// パラメータ情報をログ出力
-    /// </summary>
-    private static void LogParameters(PitchParameters parameters, PitchPreset preset)
-    {
-        Debug.Log($"Spin Axis: {parameters.SpinAxis}");
-        Debug.Log($"Spin Rate: {parameters.SpinRate} rpm");
-        Debug.Log($"Lift Coefficient: {parameters.LiftCoefficient}");
-        Debug.Log($"Velocity: {parameters.Velocity} m/s ({preset.VelocityKmh} km/h)");
-    }
-
-    /// <summary>
     /// 軌道計算結果をログ出力
     /// </summary>
     private static void LogTrajectoryResults(List<Vector3> trajectory)
     {
         Debug.Log($"軌道ポイント数: {trajectory.Count}");
-
         if (trajectory.Count > 0)
         {
             Debug.Log($"軌道開始点: {trajectory[0]}");
             Debug.Log($"軌道終点: {trajectory[trajectory.Count - 1]}");
-
             float curveAmount = CalculateTotalCurve(trajectory);
             Debug.Log($"変化量: {curveAmount * 100f:F2}cm");
         }
