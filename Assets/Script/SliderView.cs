@@ -5,6 +5,8 @@ using UnityEngine.UI;
 public class SliderView : MonoBehaviour
 {
     [SerializeField] private Vector2 _minMaxValue;
+    // è¨êîì_ï\é¶ÇÃê›íË
+    [SerializeField] private int _decimalPlaces = 1;
     [SerializeField] private Slider _slider;
     [SerializeField] private TMP_InputField _inputField;
 
@@ -26,6 +28,19 @@ public class SliderView : MonoBehaviour
     {
         _slider.minValue = _minMaxValue.x;
         _slider.maxValue = _minMaxValue.y;
+        OnSliderValueChanged(_slider.value);
+    }
+
+    public void SetValue(float value)
+    {
+        value = Mathf.Clamp(value, _minMaxValue.x, _minMaxValue.y);
+        _slider.value = value;
+        OnSliderValueChanged(_slider.value);
+    }
+
+    public float GetValue()
+    {
+        return _slider.value;
     }
 
     private void OnSliderValueChanged(float value)
