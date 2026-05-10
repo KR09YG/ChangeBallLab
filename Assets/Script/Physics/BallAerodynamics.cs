@@ -1,13 +1,7 @@
 using UnityEngine;
 
-/// <summary>
-/// ボールの空気力学を計算するクラス
-/// </summary>
 internal static class BallAerodynamics
 {
-    /// <summary>
-    /// マグヌス力を計算
-    /// </summary>
     internal static Vector3 CalculateMagnusForce(
         Vector3 velocity,
         Vector3 spinAxisNorm,
@@ -18,7 +12,7 @@ internal static class BallAerodynamics
             return Vector3.zero;
 
         Vector3 spinVector = spinAxisNorm * angularVelocity;
-        Vector3 magnusDirection = Vector3.Cross(velocity, spinVector);
+        Vector3 magnusDirection = Vector3.Cross(spinVector, velocity);
 
         if (magnusDirection.sqrMagnitude < BallPhysicsConstants.MIN_MAGNUS_DIRECTION_SQUARED)
             return Vector3.zero;
@@ -26,7 +20,8 @@ internal static class BallAerodynamics
         magnusDirection.Normalize();
 
         float velocityMagnitude = velocity.magnitude;
-        float magnusForceMagnitude = BallPhysicsConstants.MAGNUS_FORCE_HALF * BallPhysicsConstants.AIR_DENSITY
+        float magnusForceMagnitude = BallPhysicsConstants.MAGNUS_FORCE_HALF
+            * BallPhysicsConstants.AIR_DENSITY
             * velocityMagnitude * velocityMagnitude
             * BallPhysicsConstants.CROSS_SECTION
             * liftCoeff;
@@ -34,15 +29,14 @@ internal static class BallAerodynamics
         return magnusDirection * magnusForceMagnitude;
     }
 
-    /// <summary>
-    /// 空気抵抗を計算
-    /// </summary>
     internal static Vector3 CalculateDragForce(Vector3 velocity)
     {
         float velocityMagnitude = velocity.magnitude;
-        if (velocityMagnitude < BallPhysicsConstants.MIN_DRAG_VELOCITY) return Vector3.zero;
+        if (velocityMagnitude < BallPhysicsConstants.MIN_DRAG_VELOCITY)
+            return Vector3.zero;
 
-        float dragMagnitude = BallPhysicsConstants.DRAG_FORCE_HALF * BallPhysicsConstants.AIR_DENSITY
+        float dragMagnitude = BallPhysicsConstants.DRAG_FORCE_HALF
+            * BallPhysicsConstants.AIR_DENSITY
             * velocityMagnitude * velocityMagnitude
             * BallPhysicsConstants.CROSS_SECTION
             * BallPhysicsConstants.DRAG_COEFFICIENT;

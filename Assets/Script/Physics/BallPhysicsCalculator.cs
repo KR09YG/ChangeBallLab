@@ -1,5 +1,4 @@
-﻿// BallPhysicsCalculator.cs
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
 
 public struct PitchRequest
@@ -7,7 +6,6 @@ public struct PitchRequest
     public BallData BallData;
     public Vector3 ReleasePoint;
     public Vector3 PassPoint;
-    public Vector3 ThrowDirection;
     public float StopZ;
     public TrajectorySettings Settings;
     public BounceSettings BounceSettings;
@@ -16,7 +14,6 @@ public struct PitchRequest
 public static class BallPhysicsCalculator
 {
     private const float KMH_TO_MS = 1f / 3.6f;
-    private const float SCALE = 0.6123f;
 
     public struct SimulationConfig
     {
@@ -31,66 +28,67 @@ public static class BallPhysicsCalculator
     {
         Debug.Log("========== 軌道計算開始 ==========");
 
-        float speedMs = request.BallData.Speed * KMH_TO_MS * SCALE;
-        float dt = request.Settings?.DeltaTime ?? 0.01f;
+        float speedMs = request.BallData.Speed * KMH_TO_MS;
 
-        AerodynamicState aero = AerodynamicState.FromBallData(
-            request.BallData, speedMs, request.ReleasePoint.y);
+        Vector3 spinAxis = ToSpinAxis(
+            request.BallData.SpinTilt,
+            request.BallData.SpinEfficiency);
 
-        Vector3 initialVelocity = PitchVelocitySolver.FindOptimalVelocity(
+        float liftCoefficient = CalcCl(
+            speedMs,
+            request.BallData.RotateSpeed * request.BallData.SpinEfficiency);
+
+        // PassPointを終点として最適化
+        var solverSettings = request.Settings ?? new TrajectorySettings();
+        solverSettings.StopPosition = request.PassPoint;
+        solverSettings.StopAtTarget = true;
+
+        Vector3 optimalVelocity = PitchVelocitySolver.FindOptimalVelocityAdvanced(
             request.ReleasePoint,
             request.PassPoint,
-            aero,
+            spinAxis,
+            request.BallData.RotateSpeed * request.BallData.SpinEfficiency,
+            liftCoefficient,
             speedMs,
-            dt,
-            SCALE
+            solverSettings,
+            request.BounceSettings
         );
 
+        // StopZまで軌道を計算（表示用）
         var config = new SimulationConfig
         {
-            DeltaTime = dt,
-            MaxSimulationTime = request.Settings?.MaxSimulationTime ?? 5f,
+            DeltaTime = solverSettings.DeltaTime != 0 ? solverSettings.DeltaTime : 0.01f,
+            MaxSimulationTime = solverSettings.MaxSimulationTime != 0 ? solverSettings.MaxSimulationTime : 5f,
             StopAtZ = request.StopZ,
             BounceSettings = request.BounceSettings
         };
-        Debug.Log($"[Aero] SpinAxis={aero.SpinAxis}");
-        Debug.Log($"[Aero] EffectiveAW={aero.EffectiveAngularVelocity}");
-        Debug.Log($"[Aero] Cl={aero.Cl}");
-        Debug.Log($"[Initial] velocity={initialVelocity}");
+
         List<Vector3> trajectory = SimulateTrajectory(
             request.ReleasePoint,
-            initialVelocity,
-            aero.SpinAxis,
-            aero.EffectiveAngularVelocity,
-            aero.Cl,
-            config,
-            SCALE
+            optimalVelocity,
+            spinAxis,
+            request.BallData.RotateSpeed * request.BallData.SpinEfficiency,
+            liftCoefficient,
+            config
         );
 
         if (trajectory.Count > 0)
         {
-            int step = Mathf.Max(1, trajectory.Count / 10);
-            Debug.Log("=== 軌道確認 ===");
-            for (int i = 0; i < trajectory.Count; i += step)
-                Debug.Log($"  [{i:D3}] Y={trajectory[i].y:F4}");
-            Debug.Log($"  リリースY={request.ReleasePoint.y:F4} 終点Y={trajectory[trajectory.Count - 1].y:F4} 差={trajectory[trajectory.Count - 1].y - request.ReleasePoint.y:F4}m");
+            Vector3 endPoint = trajectory[trajectory.Count - 1];
+            float error = Vector3.Distance(endPoint, request.PassPoint);
+            Debug.Log($"[最終] 終点: {endPoint}, 誤差: {error * 100f:F2}cm");
         }
 
-        Debug.Log($"  リリース X={request.ReleasePoint.x:F4} Y={request.ReleasePoint.y:F4}");
-        Debug.Log($"  終点 X={trajectory[trajectory.Count - 1].x:F4} Y={trajectory[trajectory.Count - 1].y:F4}");
-        Debug.Log($"  横変化(X): {trajectory[trajectory.Count - 1].x - request.ReleasePoint.x:F4}m");
-
-        Debug.Log($"[完了] 初速: {initialVelocity} ({speedMs * 3.6f:F1}km/h)");
         Debug.Log("========== 軌道計算完了 ==========");
         return trajectory;
     }
 
     /// <summary>
     /// SpinTilt/SpinEfficiencyからSpinAxisを計算
-    /// Tilt=0°  X+ → マグヌス力上 (ストレート)
-    /// Tilt=90° Y+ → マグヌス力左 (シュート方向)
-    /// Tilt=180°X- → マグヌス力下 (カーブ)
-    /// Tilt=270°Y- → マグヌス力右 (スライダー方向)
+    /// Tilt=0°   X+ → ストレート（上向きマグヌス力）
+    /// Tilt=180° X- → カーブ（下向きマグヌス力）
+    /// Tilt=90°  Y+ → シュート方向
+    /// Tilt=270° Y- → スライダー方向
     /// </summary>
     public static Vector3 ToSpinAxis(float spinTilt, float spinEfficiency)
     {
@@ -110,35 +108,21 @@ public static class BallPhysicsCalculator
             ? (BallPhysicsConstants.BALL_RADIUS * omega) / speedMs
             : 0f;
         return Mathf.Clamp(
-            BallPhysicsConstants.CL_FACTOR_A * spinParam /
-            (1f + BallPhysicsConstants.CL_FACTOR_B * spinParam),
-            0f, BallPhysicsConstants.CL_MAX);
-    }
-
-    /// <summary>Z+方向飛行時の縦方向マグヌス加速度（正=上向き）</summary>
-    public static float CalcMagnusVerticalAccel(
-        float speedMs, float rpm, float spinTilt, float spinEfficiency)
-    {
-        float rad = spinTilt * Mathf.Deg2Rad;
-        float xComp = Mathf.Cos(rad) * spinEfficiency;
-        float cl = CalcCl(speedMs, rpm * spinEfficiency);
-        float fMag = 0.5f * BallPhysicsConstants.AIR_DENSITY
-            * speedMs * speedMs * BallPhysicsConstants.CROSS_SECTION * cl;
-        return fMag * xComp / BallPhysicsConstants.BALL_MASS;
+            1.5f * spinParam / (1f + 2.0f * spinParam),
+            0f, 0.6f);
     }
 
     public static List<Vector3> SimulateTrajectory(
         Vector3 startPosition,
         Vector3 initialVelocity,
         Vector3 spinAxisNormalized,
-        float angularVelocity,
+        float spinRateRPM,
         float liftCoefficient,
-        SimulationConfig config,
-        float scale)
+        SimulationConfig config)
     {
         return BallTrajectorySimulator.SimulateTrajectory(
             startPosition, initialVelocity, spinAxisNormalized,
-            angularVelocity, liftCoefficient, config, scale);
+            spinRateRPM, liftCoefficient, config);
     }
 
     public static Vector3 FindPointAtZ(List<Vector3> trajectory, float targetZ)
@@ -161,13 +145,13 @@ public static class BallPhysicsCalculator
         Vector3 startPosition,
         Vector3 initialVelocity,
         Vector3 spinAxisNormalized,
-        float angularVelocity,
+        float spinRateRPM,
         float liftCoefficient,
         SimulationConfig config)
     {
         var result = BallTrajectorySimulator.SimulateTrajectoryWithMetadata(
             startPosition, initialVelocity, spinAxisNormalized,
-            angularVelocity, liftCoefficient, config, SCALE);
+            spinRateRPM, liftCoefficient, config);
         return (result.Points, result.FirstGroundLayer);
     }
 }
